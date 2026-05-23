@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Megadriod DeepClone | Audio Forensics</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            blue: '#002366',
+                            dark: '#001540',
+                            light: '#1a4088',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'scanline': 'scanline 8s linear infinite',
+                    },
+                    keyframes: {
+                        scanline: {
+                            '0%': { transform: 'translateY(-100%)' },
+                            '100%': { transform: 'translateY(100vh)' }
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        body {
+            background-color: #001540;
+            color: #ffffff;
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(0, 35, 102, 0.5), transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(0, 35, 102, 0.5), transparent 25%);
+            background-attachment: fixed;
+            overflow-x: hidden;
+        }
+
+        .glass-panel {
+            background: rgba(0, 35, 102, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        }
+
+        .tech-border {
+            position: relative;
+        }
+        .tech-border::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            pointer-events: none;
+            border-radius: inherit;
+        }
+        .tech-border::after {
+            content: '';
+            position: absolute;
+            top: -1px; left: -1px;
+            width: 10px; height: 10px;
+            border-top: 2px solid #ffffff;
+            border-left: 2px solid #ffffff;
+            pointer-events: none;
+        }
+
+        .scanline-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(to bottom, transparent 50%, rgba(0, 35, 102, 0.1) 51%);
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 50;
+            opacity: 0.3;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #001540; }
+        ::-webkit-scrollbar-thumb { background: #1a4088; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #ffffff; }
+
+        .nav-item.active {
+            background: rgba(255, 255, 255, 0.1);
+            border-left: 4px solid #ffffff;
+        }
+
+        .data-value { font-family: 'JetBrains Mono', monospace; }
+        
+        .loader {
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-bottom-color: #ffffff;
+            border-radius: 50%;
+            display: inline-block;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+        }
+        @keyframes rotation {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .hidden-section { display: none; }
+    </style>
+</head>
+<body class="h-screen flex overflow-hidden font-sans antialiased">
+
+    <div class="scanline-overlay"></div>
+
+    <aside class="w-64 glass-panel flex flex-col z-10 border-r border-white/10 h-full">
+        <div class="p-6 flex items-center gap-3 border-b border-white/10">
+            <img src="logo.png" alt="Megadriod Logo" class="h-10 w-auto" onerror="this.src='https://placehold.co/100x100/002366/ffffff?text=M'">
+            <div>
+                <h1 class="font-bold text-lg tracking-wider">MEGADRIOD</h1>
+                <p class="text-[10px] uppercase tracking-widest text-white/50">DeepClone API</p>
+            </div>
+        </div>
+
+        <nav class="flex-1 overflow-y-auto py-4">
+            <ul class="space-y-1">
+                <li>
+                    <button onclick="switchTab('dashboard')" id="nav-dashboard" class="nav-item active w-full text-left px-6 py-3 text-sm hover:bg-white/5 transition-colors flex items-center gap-3">
+                        <i class="fas fa-satellite-dish w-5 text-center"></i> System Core
+                    </button>
+                </li>
+                <li class="px-6 py-2 text-[10px] uppercase tracking-widest text-white/40 mt-4 mb-2">Attack Vector Analysis</li>
+                <li>
+                    <button onclick="switchTab('echoclone')" id="nav-echoclone" class="nav-item w-full text-left px-6 py-3 text-sm hover:bg-white/5 transition-colors flex items-center gap-3">
+                        <i class="fas fa-wave-square w-5 text-center"></i> EchoClone
+                    </button>
+                </li>
+                <li>
+                    <button onclick="switchTab('panicscript')" id="nav-panicscript" class="nav-item w-full text-left px-6 py-3 text-sm hover:bg-white/5 transition-colors flex items-center gap-3">
+                        <i class="fas fa-file-waveform w-5 text-center"></i> PanicScript
+                    </button>
+                </li>
+                <li>
+                    <button onclick="switchTab('fakecall')" id="nav-fakecall" class="nav-item w-full text-left px-6 py-3 text-sm hover:bg-white/5 transition-colors flex items-center gap-3">
+                        <i class="fas fa-phone-slash w-5 text-center"></i> FakeCall Check
+                    </button>
+                </li>
+                <li>
+                    <button onclick="switchTab('voicetwin')" id="nav-voicetwin" class="nav-item w-full text-left px-6 py-3 text-sm hover:bg-white/5 transition-colors flex items-center gap-3">
+                        <i class="fas fa-people-arrows w-5 text-center"></i> VoiceTwin
+                    </button>
+                </li>
+                <li>
+                    <button onclick="switchTab('audiotrap')" id="nav-audiotrap" class="nav-item w-full text-left px-6 py-3 text-sm hover:bg-white/5 transition-colors flex items-center gap-3">
+                        <i class="fas fa-scissors w-5 text-center"></i> AudioTrap
+                    </button>
+                </li>
+                <li>
+                    <button onclick="switchTab('cloneproof')" id="nav-cloneproof" class="nav-item w-full text-left px-6 py-3 text-sm hover:bg-white/5 transition-colors flex items-center gap-3">
+                        <i class="fas fa-shield-halved w-5 text-center"></i> CloneProof Test
+                    </button>
+                </li>
+            </ul>
+        </nav>
+
+        <div class="p-4 border-t border-white/10 bg-black/20">
+            <div class="text-[10px] text-white/50 mb-1">SESSION_ID</div>
+            <div id="session-display" class="data-value text-xs truncate text-white">Initializing...</div>
+            <div class="flex items-center gap-2 mt-2">
+                <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                <span id="api-status" class="text-xs text-white/70">Connecting to API...</span>
+            </div>
+        </div>
+    </aside>
+
+    <main class="flex-1 relative overflow-y-auto">
+        <!-- Top decorative bar -->
+        <div class="h-1 w-full bg-gradient-to-r from-brand-blue via-white to-brand-blue opacity-50"></div>
+        
+        <div class="p-8 max-w-6xl mx-auto h-full">
+            
+            <!-- Global Error/Notification Toast -->
+            <div id="toast" class="fixed top-4 right-4 bg-red-600 text-white px-6 py-3 rounded shadow-2xl transform transition-transform translate-x-full z-50 flex items-center gap-3">
+                <i class="fas fa-triangle-exclamation"></i>
+                <span id="toast-msg">Error message</span>
+            </div>
+
+            <!-- DASHBOARD SECTION -->
+            <section id="sec-dashboard" class="animate-fade-in">
+                <h2 class="text-3xl font-light mb-2">System <span class="font-bold">Core</span></h2>
+                <p class="text-white/60 mb-8">Welcome to the Megadriod DeepClone analytical engine. Select a module from the terminal menu to begin behavioral and forensic audio analysis.</p>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="glass-panel tech-border p-6 rounded-lg">
+                        <i class="fas fa-microchip text-3xl mb-4 text-white/80"></i>
+                        <h3 class="font-bold text-lg mb-2">DSP Engine Active</h3>
+                        <p class="text-sm text-white/60">Librosa mathematical extraction engine is online. Ready for MFCC and RMSE processing.</p>
+                    </div>
+                    <div class="glass-panel tech-border p-6 rounded-lg">
+                        <i class="fas fa-brain text-3xl mb-4 text-white/80"></i>
+                        <h3 class="font-bold text-lg mb-2">Semantic Lexicon</h3>
+                        <p class="text-sm text-white/60">PanicScript manipulation dictionaries are loaded. Tracking fear, finance, and urgency markers.</p>
+                    </div>
+                    <div class="glass-panel tech-border p-6 rounded-lg">
+                        <i class="fas fa-database text-3xl mb-4 text-white/80"></i>
+                        <h3 class="font-bold text-lg mb-2">Telemetry Sink</h3>
+                        <p class="text-sm text-white/60">Session events are being logged securely via SQLAlchemy to the local/remote datastore.</p>
+                    </div>
+                </div>
+            </section>
+
+            <section id="sec-echoclone" class="hidden-section">
+                <div class="mb-8">
+                    <h2 class="text-3xl font-light mb-2"><span class="font-bold">Echo</span>Clone</h2>
+                    <p class="text-white/60">Upload a voice note. The system mathematically extracts tonal patterns (MFCCs) to detect AI generation signatures.</p>
+                </div>
+
+                <div class="glass-panel tech-border p-8 rounded-lg mb-6">
+                    <label class="block text-sm font-medium mb-4 text-white/80">TARGET_AUDIO_FILE.wav/mp3</label>
+                    <div class="flex items-center justify-center w-full">
+                        <label class="flex flex-col items-center justify-center w-full h-48 border-2 border-white/20 border-dashed rounded-lg cursor-pointer bg-black/20 hover:bg-white/5 transition-colors">
+                            <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                                <i class="fas fa-cloud-upload-alt text-4xl mb-3 text-white/50"></i>
+                                <p class="mb-2 text-sm text-white/70"><span class="font-semibold">Click to upload</span> or drag and drop</p>
+                                <p class="text-xs text-white/40">WAV, MP3, M4A (Max 10MB)</p>
+                            </div>
+                            <input id="echoclone-file" type="file" class="hidden" accept="audio/*" onchange="updateFileName('echoclone-file', 'echoclone-filename')" />
+                        </label>
+                    </div>
+                    <div id="echoclone-filename" class="text-center mt-3 text-sm text-white/60 data-value"></div>
+                    
+                    <button onclick="analyzeEchoClone()" class="mt-6 w-full bg-white text-brand-blue font-bold py-3 px-4 rounded hover:bg-gray-200 transition-colors flex items-center justify-center gap-2">
+                        <i class="fas fa-radar"></i> INITIATE EXTRACTION
+                    </button>
+                </div>
+
+                <!-- Results Panel -->
+                <div id="echoclone-results" class="hidden-section glass-panel tech-border p-6 rounded-lg bg-black/40">
+                    <h3 class="text-lg font-bold border-b border-white/20 pb-2 mb-4">Forensic Readout</h3>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="bg-brand-blue/30 p-4 rounded">
+                            <div class="text-[10px] text-white/50 mb-1">AI PROBABILITY SCORE</div>
+                            <div class="text-3xl font-bold data-value flex items-baseline gap-1">
+                                <span id="echo-ai-score">0.0</span><span class="text-lg">%</span>
+                            </div>
+                            <div class="w-full bg-white/10 h-1 mt-2 rounded overflow-hidden">
+                                <div id="echo-ai-bar" class="bg-red-500 h-full transition-all duration-1000" style="width: 0%"></div>
+                            </div>
+                            <div id="echo-verdict" class="mt-2 text-xs font-bold text-red-400">ANALYZING...</div>
+                        </div>
+                        <div class="bg-brand-blue/30 p-4 rounded">
+                            <div class="text-[10px] text-white/50 mb-1">VOCAL TRACT NODES MAPPED</div>
+                            <div id="echo-nodes" class="text-3xl font-bold data-value">0</div>
+                            <div class="text-xs text-white/60 mt-2">MFCC Feature Vectors Extracted</div>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <div class="text-[10px] text-white/50 mb-1">RAW VECTOR HASH (PARTIAL)</div>
+                        <div id="echo-hash" class="bg-black/50 p-2 rounded text-[10px] text-white/40 font-mono break-all h-16 overflow-hidden">...</div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="sec-panicscript" class="hidden-section">
+                <div class="mb-8">
+                    <h2 class="text-3xl font-light mb-2"><span class="font-bold">Panic</span>Script</h2>
+                    <p class="text-white/60">Paste a voice transcript. The NLP engine detects urgency, financial coercion, and fear tactics.</p>
+                </div>
+
+                <div class="glass-panel tech-border p-8 rounded-lg mb-6">
+                    <label class="block text-sm font-medium mb-2 text-white/80">TRANSCRIPT_INPUT.txt</label>
+                    <textarea id="panic-text" rows="6" class="w-full bg-black/30 border border-white/20 rounded p-4 text-white placeholder-white/30 focus:outline-none focus:border-white transition-colors" placeholder="e.g., 'Hello, this is the police. Your account has been hacked. You need to wire money to this safe account immediately before you are arrested.'"></textarea>
+                    
+                    <button onclick="analyzePanicScript()" class="mt-4 w-full bg-white text-brand-blue font-bold py-3 px-4 rounded hover:bg-gray-200 transition-colors flex items-center justify-center gap-2">
+                        <i class="fas fa-search-text"></i> RUN NLP ANALYSIS
+                    </button>
+                </div>
+
+                <!-- Results -->
+                <div id="panic-results" class="hidden-section glass-panel tech-border p-6 rounded-lg bg-black/40">
+                    <div class="flex items-center justify-between border-b border-white/20 pb-4 mb-4">
+                        <h3 class="text-lg font-bold">Lexical Threat Score</h3>
+                        <div id="panic-verdict" class="px-3 py-1 rounded text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/50">VERDICT</div>
+                    </div>
+                    
+                    <div class="mb-6">
+                        <div class="flex justify-between text-sm mb-1">
+                            <span class="text-white/60">Manipulation Index</span>
+                            <span id="panic-score" class="font-bold data-value">0%</span>
+                        </div>
+                        <div class="w-full bg-white/10 h-3 rounded-full overflow-hidden">
+                            <div id="panic-bar" class="h-full bg-gradient-to-r from-green-500 via-yellow-500 to-red-500 transition-all duration-1000" style="width: 0%"></div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="bg-black/30 p-3 rounded border border-white/5">
+                            <div class="text-xs text-white/50 mb-2 border-b border-white/10 pb-1">URGENCY FLAGS</div>
+                            <div id="panic-urgency" class="flex flex-wrap gap-1">None</div>
+                        </div>
+                        <div class="bg-black/30 p-3 rounded border border-white/5">
+                            <div class="text-xs text-white/50 mb-2 border-b border-white/10 pb-1">FINANCIAL FLAGS</div>
+                            <div id="panic-financial" class="flex flex-wrap gap-1">None</div>
+                        </div>
+                        <div class="bg-black/30 p-3 rounded border border-white/5">
+                            <div class="text-xs text-white/50 mb-2 border-b border-white/10 pb-1">FEAR FLAGS</div>
+                            <div id="panic-fear" class="flex flex-wrap gap-1">None</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="sec-fakecall" class="hidden-section">
+                <div class="mb-8">
+                    <h2 class="text-3xl font-light mb-2"><span class="font-bold">Fake</span>Call Check</h2>
+                    <p class="text-white/60">Algorithmic structural check against known scam, VoIP, and One-Ring fraud number formats.</p>
+                </div>
+
+                <div class="glass-panel tech-border p-8 rounded-lg mb-6">
+                    <label class="block text-sm font-medium mb-2 text-white/80">TARGET_MSISDN</label>
+                    <div class="flex relative">
+                        <div class="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
+                            <i class="fas fa-phone text-white/40"></i>
+                        </div>
+                        <input type="tel" id="fakecall-input" class="w-full bg-black/30 border border-white/20 rounded py-4 pl-12 pr-4 text-white text-lg data-value focus:outline-none focus:border-white transition-colors" placeholder="+234 800 000 0000">
+                    </div>
+                    
+                    <button onclick="analyzeFakeCall()" class="mt-4 w-full bg-white text-brand-blue font-bold py-3 px-4 rounded hover:bg-gray-200 transition-colors flex items-center justify-center gap-2">
+                        <i class="fas fa-tower-cell"></i> QUERY TELECOM DB
+                    </button>
+                </div>
+
+                <!-- Results -->
+                <div id="fakecall-results" class="hidden-section glass-panel tech-border p-6 rounded-lg bg-black/40">
+                    <div class="flex items-center gap-6">
+                        <div id="fakecall-icon-bg" class="w-20 h-20 rounded-full flex items-center justify-center text-3xl">
+                            <i id="fakecall-icon" class="fas fa-shield-check"></i>
+                        </div>
+                        <div class="flex-1">
+                            <div class="text-sm text-white/50 mb-1">RISK ASSESSMENT</div>
+                            <div id="fakecall-risk" class="text-2xl font-bold tracking-wider mb-2">UNKNOWN</div>
+                            <div id="fakecall-voip" class="text-xs bg-white/10 inline-block px-2 py-1 rounded">VoIP Status: Pending</div>
+                        </div>
+                    </div>
+                    <div class="mt-6">
+                        <div class="text-xs text-white/50 mb-2 border-b border-white/10 pb-1">DIAGNOSTIC FLAGS</div>
+                        <ul id="fakecall-warnings" class="space-y-2 text-sm text-white/80">
+                            <!-- Warnings injected here -->
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <section id="sec-voicetwin" class="hidden-section">
+                <div class="mb-8">
+                    <h2 class="text-3xl font-light mb-2"><span class="font-bold">Voice</span>Twin</h2>
+                    <p class="text-white/60">Compare two voices. The system calculates cosine similarity across their mathematical feature vectors.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <!-- Voice 1 -->
+                    <div class="glass-panel tech-border p-6 rounded-lg relative overflow-hidden">
+                        <div id="vt-1-overlay" class="absolute inset-0 bg-black/50 z-10 flex items-center justify-center hidden">
+                            <div class="loader w-8 h-8"></div>
+                        </div>
+                        <h3 class="font-bold text-sm text-white/70 mb-4 border-b border-white/10 pb-2">SAMPLE A (Source)</h3>
+                        <input id="vt-file-1" type="file" class="hidden" accept="audio/*" onchange="processVoiceTwinSample(1)" />
+                        <button onclick="document.getElementById('vt-file-1').click()" class="w-full bg-black/30 border border-white/20 rounded py-8 hover:bg-white/5 transition flex flex-col items-center justify-center text-white/60">
+                            <i id="vt-icon-1" class="fas fa-microphone text-2xl mb-2"></i>
+                            <span id="vt-text-1" class="text-sm">Select Baseline Audio</span>
+                        </button>
+                        <div class="mt-2 text-[10px] text-green-400 font-mono truncate hidden" id="vt-vector-1">Vector extracted...</div>
+                    </div>
+
+                    <!-- Voice 2 -->
+                    <div class="glass-panel tech-border p-6 rounded-lg relative overflow-hidden">
+                        <div id="vt-2-overlay" class="absolute inset-0 bg-black/50 z-10 flex items-center justify-center hidden">
+                            <div class="loader w-8 h-8"></div>
+                        </div>
+                        <h3 class="font-bold text-sm text-white/70 mb-4 border-b border-white/10 pb-2">SAMPLE B (Suspect)</h3>
+                        <input id="vt-file-2" type="file" class="hidden" accept="audio/*" onchange="processVoiceTwinSample(2)" />
+                        <button onclick="document.getElementById('vt-file-2').click()" class="w-full bg-black/30 border border-white/20 rounded py-8 hover:bg-white/5 transition flex flex-col items-center justify-center text-white/60">
+                            <i id="vt-icon-2" class="fas fa-microphone text-2xl mb-2"></i>
+                            <span id="vt-text-2" class="text-sm">Select Comparison Audio</span>
+                        </button>
+                        <div class="mt-2 text-[10px] text-green-400 font-mono truncate hidden" id="vt-vector-2">Vector extracted...</div>
+                    </div>
+                </div>
+                
+                <button onclick="compareVoiceTwins()" id="vt-compare-btn" class="w-full bg-white/20 text-white font-bold py-3 px-4 rounded cursor-not-allowed transition-colors border border-white/20" disabled>
+                    AWAITING VECTORS FOR COMPARISON
+                </button>
+
+                <!-- Results -->
+                <div id="vt-results" class="hidden-section mt-6 glass-panel tech-border p-8 rounded-lg text-center">
+                    <div class="text-sm text-white/50 mb-2">COSINE SIMILARITY INDEX</div>
+                    <div class="text-6xl font-bold data-value mb-2" id="vt-score">0%</div>
+                    <div id="vt-verdict" class="inline-block px-4 py-1 rounded text-sm font-bold bg-white/10">UNKNOWN</div>
+                </div>
+            </section>
+
+            <section id="sec-audiotrap" class="hidden-section">
+                <div class="mb-8">
+                    <h2 class="text-3xl font-light mb-2"><span class="font-bold">Audio</span>Trap</h2>
+                    <p class="text-white/60">Detects digital manipulation. Identifies unnatural drops in RMS energy to reveal splices and cuts.</p>
+                </div>
+
+                <div class="glass-panel tech-border p-8 rounded-lg mb-6">
+                    <label class="block text-sm font-medium mb-4 text-white/80">EVIDENCE_FILE.wav/mp3</label>
+                    <div class="flex items-center justify-center w-full">
+                        <label class="flex flex-col items-center justify-center w-full h-32 border-2 border-white/20 border-dashed rounded-lg cursor-pointer bg-black/20 hover:bg-white/5 transition-colors">
+                            <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                                <i class="fas fa-scissors text-2xl mb-2 text-white/50"></i>
+                                <p class="text-sm text-white/70">Upload recording for splice detection</p>
+                            </div>
+                            <input id="audiotrap-file" type="file" class="hidden" accept="audio/*" onchange="updateFileName('audiotrap-file', 'audiotrap-filename')" />
+                        </label>
+                    </div>
+                    <div id="audiotrap-filename" class="text-center mt-3 text-sm text-white/60 data-value"></div>
+                    
+                    <button onclick="analyzeAudioTrap()" class="mt-6 w-full bg-white text-brand-blue font-bold py-3 px-4 rounded hover:bg-gray-200 transition-colors flex items-center justify-center gap-2">
+                        <i class="fas fa-microscope"></i> SCAN FOR MANIPULATION
+                    </button>
+                </div>
+
+                <!-- Results -->
+                <div id="audiotrap-results" class="hidden-section glass-panel tech-border p-6 rounded-lg bg-black/40">
+                    <div class="flex items-center justify-between border-b border-white/20 pb-4 mb-4">
+                        <h3 class="text-lg font-bold">Continuity Analysis</h3>
+                        <div id="trap-verdict" class="px-3 py-1 rounded text-xs font-bold bg-green-500/20 text-green-400 border border-green-500/50">CLEAN</div>
+                    </div>
+                    
+                    <div class="flex items-center justify-center py-6">
+                        <div class="text-center">
+                            <div class="text-[10px] text-white/50 mb-2">ANOMALY / SPLICE COUNT</div>
+                            <div id="trap-splices" class="text-6xl font-bold data-value text-white">0</div>
+                        </div>
+                    </div>
+
+                    <!-- Simulated Waveform visualization -->
+                    <div class="w-full h-16 flex items-end gap-[2px] opacity-70" id="trap-waveform">
+                        <!-- Bars injected via JS -->
+                    </div>
+                </div>
+            </section>
+
+            <section id="sec-cloneproof" class="hidden-section">
+                <div class="mb-8">
+                    <h2 class="text-3xl font-light mb-2"><span class="font-bold">Clone</span>Proof Test</h2>
+                    <p class="text-white/60">Test your ear against the machine. Identify anomalies based on spectral flatness and contextual cues.</p>
+                </div>
+
+                <div id="quiz-container" class="glass-panel tech-border p-8 rounded-lg relative">
+                    <div class="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
+                        <span class="text-xs text-white/50">SCENARIO <span id="quiz-current">1</span>/3</span>
+                        <span class="text-xs text-white/50">SCORE: <span id="quiz-score" class="font-bold text-white">0</span></span>
+                    </div>
+
+                    <div class="mb-8">
+                        <h3 class="text-xl font-bold mb-4" id="quiz-title">Loading...</h3>
+                        <p class="text-white/80 text-sm bg-black/30 p-4 rounded border border-white/10 italic" id="quiz-desc">...</p>
+                        
+                        <!-- Simulated visual representation of audio to analyze -->
+                        <div class="mt-4 p-4 bg-brand-dark/50 rounded tech-border flex flex-col items-center justify-center">
+                            <div class="text-[10px] text-white/40 mb-2">VISUALIZED SPECTRAL TRACE</div>
+                            <div id="quiz-visual" class="w-full h-12 flex items-center justify-center gap-1 opacity-80"></div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <button onclick="answerQuiz('AI')" class="bg-black/40 border border-white/20 hover:bg-white/10 text-white font-bold py-4 rounded transition-colors">
+                            <i class="fas fa-robot text-red-400 mb-1 block text-2xl"></i> AI GENERATED
+                        </button>
+                        <button onclick="answerQuiz('HUMAN')" class="bg-black/40 border border-white/20 hover:bg-white/10 text-white font-bold py-4 rounded transition-colors">
+                            <i class="fas fa-user text-green-400 mb-1 block text-2xl"></i> HUMAN ORIGIN
+                        </button>
+                    </div>
+                    
+                    <div id="quiz-feedback" class="mt-6 text-center text-sm font-bold hidden p-3 rounded"></div>
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+    <script>
+        const API_BASE = 'http://127.0.0.1:8000/api/v1';
+        let SESSION_ID = '';
+        
+        // VoiceTwin state
+        let vtVector1 = null;
+        let vtVector2 = null;
+
+        // Generate UUID
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        // Initialize App
+        async function initApp() {
+            SESSION_ID = generateUUID();
+            document.getElementById('session-display').innerText = SESSION_ID;
+            
+            try {
+                const res = await fetch(`${API_BASE}/session/start`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: SESSION_ID })
+                });
+                if(res.ok) {
+                    document.getElementById('api-status').innerText = 'API Connected';
+                    document.getElementById('api-status').previousElementSibling.classList.replace('bg-green-500', 'bg-cyan-400');
+                } else {
+                    throw new Error("API configuration error");
+                }
+            } catch (err) {
+                document.getElementById('api-status').innerText = 'API Offline - Run backend';
+                document.getElementById('api-status').previousElementSibling.classList.replace('bg-green-500', 'bg-red-500');
+                showToast("Backend not detected. Ensure FastAPI is running on port 8000.");
+            }
+
+            initQuiz();
+        }
+
+        // UI Helpers
+        function switchTab(tabId) {
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('section').forEach(el => el.classList.add('hidden-section'));
+            
+            document.getElementById(`nav-${tabId}`).classList.add('active');
+            document.getElementById(`sec-${tabId}`).classList.remove('hidden-section');
+        }
+
+        function updateFileName(inputId, displayId) {
+            const input = document.getElementById(inputId);
+            const display = document.getElementById(displayId);
+            if(input.files.length > 0) {
+                display.innerText = input.files[0].name;
+            } else {
+                display.innerText = '';
+            }
+        }
+
+        function showToast(msg, isError = true) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-msg').innerText = msg;
+            toast.className = `fixed top-4 right-4 text-white px-6 py-3 rounded shadow-2xl transform transition-transform duration-300 z-50 flex items-center gap-3 ${isError ? 'bg-red-600' : 'bg-green-600'}`;
+            toast.classList.remove('translate-x-full');
+            setTimeout(() => toast.classList.add('translate-x-full'), 4000);
+        }
+
+        
+        async function analyzeEchoClone() {
+            const fileInput = document.getElementById('echoclone-file');
+            if(!fileInput.files[0]) return showToast("Upload an audio file first.");
+            
+            const btn = event.currentTarget;
+            btn.innerHTML = '<div class="loader w-5 h-5 mr-2"></div> ANALYZING...';
+            
+            const formData = new FormData();
+            formData.append("session_id", SESSION_ID);
+            formData.append("audio_file", fileInput.files[0]);
+
+            try {
+                const res = await fetch(`${API_BASE}/clone/audio-forensics`, { method: 'POST', body: formData });
+                if(!res.ok) throw new Error("Processing failed.");
+                const data = await res.json();
+                
+                document.getElementById('echoclone-results').classList.remove('hidden-section');
+                
+                const score = data.echo_clone_analysis.ai_generation_probability;
+                document.getElementById('echo-ai-score').innerText = score;
+                document.getElementById('echo-ai-bar').style.width = `${score}%`;
+                document.getElementById('echo-nodes').innerText = data.echo_clone_analysis.vocal_tract_nodes_mapped;
+                document.getElementById('echo-hash').innerText = JSON.stringify(data.raw_fingerprint_vector).substring(0, 150) + "...";
+                
+                const verdictEl = document.getElementById('echo-verdict');
+                if(score > 60) {
+                    verdictEl.innerText = "CRITICAL: AI SIGNATURE DETECTED";
+                    verdictEl.className = "mt-2 text-xs font-bold text-red-500";
+                    document.getElementById('echo-ai-bar').className = "bg-red-500 h-full transition-all duration-1000";
+                } else {
+                    verdictEl.innerText = "SAFE: HUMAN VOCAL TRACT";
+                    verdictEl.className = "mt-2 text-xs font-bold text-green-500";
+                    document.getElementById('echo-ai-bar').className = "bg-green-500 h-full transition-all duration-1000";
+                }
+            } catch (e) {
+                showToast(e.message);
+            } finally {
+                btn.innerHTML = '<i class="fas fa-radar"></i> INITIATE EXTRACTION';
+            }
+        }
+
+        async function analyzePanicScript() {
+            const text = document.getElementById('panic-text').value;
+            if(!text.trim()) return showToast("Please enter a transcript.");
+
+            const btn = event.currentTarget;
+            btn.innerHTML = '<div class="loader w-5 h-5 mr-2"></div> PROCESSING NLP...';
+
+            try {
+                const res = await fetch(`${API_BASE}/clone/panic-script`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: SESSION_ID, transcript: text })
+                });
+                const data = await res.json();
+                
+                document.getElementById('panic-results').classList.remove('hidden-section');
+                
+                const score = data.manipulation_score_percentage;
+                document.getElementById('panic-score').innerText = `${score}%`;
+                document.getElementById('panic-bar').style.width = `${score}%`;
+                
+                const vEl = document.getElementById('panic-verdict');
+                vEl.innerText = data.verdict.split(":")[0];
+                if(score > 70) vEl.className = "px-3 py-1 rounded text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/50";
+                else if(score > 30) vEl.className = "px-3 py-1 rounded text-xs font-bold bg-yellow-500/20 text-yellow-400 border border-yellow-500/50";
+                else vEl.className = "px-3 py-1 rounded text-xs font-bold bg-green-500/20 text-green-400 border border-green-500/50";
+
+                const mapTags = (arr) => arr.length ? arr.map(w => `<span class="bg-white/10 px-2 py-0.5 rounded text-xs">${w}</span>`).join('') : '<span class="text-white/30 text-xs">None</span>';
+                
+                document.getElementById('panic-urgency').innerHTML = mapTags(data.urgency_flags);
+                document.getElementById('panic-financial').innerHTML = mapTags(data.financial_flags);
+                document.getElementById('panic-fear').innerHTML = mapTags(data.fear_flags);
+
+            } catch(e) {
+                showToast("Connection to NLP engine failed.");
+            } finally {
+                btn.innerHTML = '<i class="fas fa-search-text"></i> RUN NLP ANALYSIS';
+            }
+        }
+
+        async function analyzeFakeCall() {
+            const num = document.getElementById('fakecall-input').value;
+            if(!num.trim()) return showToast("Enter a phone number.");
+
+            const btn = event.currentTarget;
+            btn.innerHTML = '<div class="loader w-5 h-5 mr-2"></div> QUERYING...';
+
+            try {
+                // Remove spaces and + for URL
+                const safeNum = encodeURIComponent(num.replace(/\s+/g, ''));
+                const res = await fetch(`${API_BASE}/clone/fake-call-check/${safeNum}?session_id=${SESSION_ID}`);
+                const data = await res.json();
+                
+                document.getElementById('fakecall-results').classList.remove('hidden-section');
+                
+                const riskEl = document.getElementById('fakecall-risk');
+                const iconBg = document.getElementById('fakecall-icon-bg');
+                const icon = document.getElementById('fakecall-icon');
+                
+                riskEl.innerText = data.risk_level;
+                if(data.risk_level === 'CRITICAL' || data.risk_level === 'HIGH') {
+                    iconBg.className = "w-20 h-20 rounded-full flex items-center justify-center text-3xl bg-red-500/20 text-red-500";
+                    icon.className = "fas fa-skull-crossbones";
+                } else if(data.risk_level === 'MEDIUM') {
+                    iconBg.className = "w-20 h-20 rounded-full flex items-center justify-center text-3xl bg-yellow-500/20 text-yellow-500";
+                    icon.className = "fas fa-triangle-exclamation";
+                } else {
+                    iconBg.className = "w-20 h-20 rounded-full flex items-center justify-center text-3xl bg-green-500/20 text-green-500";
+                    icon.className = "fas fa-check-shield";
+                }
+
+                document.getElementById('fakecall-voip').innerText = data.is_voip_suspect ? "WARNING: Virtual/VoIP Number Detected" : "Standard Carrier Routing";
+                document.getElementById('fakecall-voip').className = data.is_voip_suspect ? "text-xs font-bold text-red-400 bg-red-900/40 px-2 py-1 rounded" : "text-xs font-bold text-green-400 bg-green-900/40 px-2 py-1 rounded";
+
+                const warnList = document.getElementById('fakecall-warnings');
+                if(data.warnings.length === 0) {
+                    warnList.innerHTML = '<li class="text-green-400"><i class="fas fa-check mr-2"></i>No structural anomalies detected.</li>';
+                } else {
+                    warnList.innerHTML = data.warnings.map(w => `<li class="text-red-400"><i class="fas fa-times mr-2"></i>${w}</li>`).join('');
+                }
+
+            } catch(e) {
+                showToast("DB Query failed.");
+            } finally {
+                btn.innerHTML = '<i class="fas fa-tower-cell"></i> QUERY TELECOM DB';
+            }
+        }
+
+        async function processVoiceTwinSample(num) {
+            const input = document.getElementById(`vt-file-${num}`);
+            if(!input.files[0]) return;
+            
+            document.getElementById(`vt-${num}-overlay`).classList.remove('hidden');
+            
+            const formData = new FormData();
+            formData.append("session_id", SESSION_ID);
+            formData.append("audio_file", input.files[0]);
+
+            try {
+                const res = await fetch(`${API_BASE}/clone/audio-forensics`, { method: 'POST', body: formData });
+                const data = await res.json();
+                
+                if(num === 1) vtVector1 = data.raw_fingerprint_vector.join(',');
+                else vtVector2 = data.raw_fingerprint_vector.join(',');
+                
+                document.getElementById(`vt-icon-${num}`).className = "fas fa-check-circle text-green-400 text-2xl mb-2";
+                document.getElementById(`vt-text-${num}`).innerText = input.files[0].name;
+                document.getElementById(`vt-vector-${num}`).classList.remove('hidden');
+
+                // Enable compare button if both vectors exist
+                if(vtVector1 && vtVector2) {
+                    const btn = document.getElementById('vt-compare-btn');
+                    btn.disabled = false;
+                    btn.className = "w-full bg-white text-brand-blue font-bold py-3 px-4 rounded hover:bg-gray-200 transition-colors";
+                    btn.innerHTML = "<i class='fas fa-dna'></i> COMPUTE COSINE SIMILARITY";
+                }
+
+            } catch(e) {
+                showToast(`Failed to process sample ${num}`);
+            } finally {
+                document.getElementById(`vt-${num}-overlay`).classList.add('hidden');
+            }
+        }
+
+        async function compareVoiceTwins() {
+            const btn = document.getElementById('vt-compare-btn');
+            btn.innerHTML = '<div class="loader w-5 h-5 mr-2"></div> COMPUTING MATH...';
+
+            const formData = new FormData();
+            formData.append("session_id", SESSION_ID);
+            formData.append("vector_a", vtVector1);
+            formData.append("vector_b", vtVector2);
+
+            try {
+                const res = await fetch(`${API_BASE}/clone/voice-twin`, { method: 'POST', body: formData });
+                const data = await res.json();
+                
+                document.getElementById('vt-results').classList.remove('hidden-section');
+                document.getElementById('vt-score').innerText = `${data.similarity_percentage}%`;
+                
+                const vEl = document.getElementById('vt-verdict');
+                vEl.innerText = data.verdict;
+                if(data.similarity_percentage > 85) {
+                    vEl.className = "inline-block px-4 py-1 rounded text-sm font-bold bg-green-500/20 text-green-400 border border-green-500";
+                } else {
+                    vEl.className = "inline-block px-4 py-1 rounded text-sm font-bold bg-red-500/20 text-red-400 border border-red-500";
+                }
+            } catch(e) {
+                showToast("Comparison failed.");
+            } finally {
+                btn.innerHTML = "<i class='fas fa-dna'></i> COMPUTE COSINE SIMILARITY";
+            }
+        }
+
+        async function analyzeAudioTrap() {
+            const fileInput = document.getElementById('audiotrap-file');
+            if(!fileInput.files[0]) return showToast("Upload an audio file first.");
+            
+            const btn = event.currentTarget;
+            btn.innerHTML = '<div class="loader w-5 h-5 mr-2"></div> SCANNING...';
+            
+            const formData = new FormData();
+            formData.append("session_id", SESSION_ID);
+            formData.append("audio_file", fileInput.files[0]);
+
+            try {
+                const res = await fetch(`${API_BASE}/clone/audio-forensics`, { method: 'POST', body: formData });
+                if(!res.ok) throw new Error("Processing failed.");
+                const data = await res.json();
+                
+                document.getElementById('audiotrap-results').classList.remove('hidden-section');
+                
+                const splices = data.audio_trap_analysis.splices_detected;
+                document.getElementById('trap-splices').innerText = splices;
+                
+                const verdictEl = document.getElementById('trap-verdict');
+                if(splices > 0) {
+                    verdictEl.innerText = "MANIPULATED (Cuts Detected)";
+                    verdictEl.className = "px-3 py-1 rounded text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/50";
+                    document.getElementById('trap-splices').classList.add('text-red-400');
+                } else {
+                    verdictEl.innerText = "CLEAN (Continuous Stream)";
+                    verdictEl.className = "px-3 py-1 rounded text-xs font-bold bg-green-500/20 text-green-400 border border-green-500/50";
+                    document.getElementById('trap-splices').classList.remove('text-red-400');
+                }
+
+                // Generate simulated waveform based on splices
+                const wfContainer = document.getElementById('trap-waveform');
+                wfContainer.innerHTML = '';
+                for(let i=0; i<40; i++) {
+                    const bar = document.createElement('div');
+                    bar.className = 'flex-1 bg-white/40 rounded-t';
+                    const height = Math.random() * 80 + 20;
+                    bar.style.height = `${height}%`;
+                    
+                    // Inject drops where splices exist
+                    if(splices > 0 && (i === 10 || i === 25) && i < splices*15) {
+                        bar.style.height = '5%';
+                        bar.className = 'flex-1 bg-red-500 rounded-t';
+                    }
+                    wfContainer.appendChild(bar);
+                }
+
+            } catch (e) {
+                showToast(e.message);
+            } finally {
+                btn.innerHTML = '<i class="fas fa-microscope"></i> SCAN FOR MANIPULATION';
+            }
+        }
+
+        const quizData = [
+            {
+                desc: "Listen carefully. 'Hello, this is your bank manager. We need your OTP to stop a fraudulent transaction on your account right now.' The background noise cuts out abruptly between sentences.",
+                flatness: true, // simulates AI flat signal
+                isAI: true
+            },
+            {
+                desc: "A voice note from a friend: 'Hey man, I'm stuck in traffic at Lekki toll gate, I'll be like 30 minutes late.' You hear car horns varying naturally in pitch.",
+                flatness: false,
+                isAI: false
+            },
+            {
+                desc: "An unknown number calls sounding exactly like your boss: 'I need you to buy 5 Apple Gift Cards for a client presentation immediately, don't tell anyone.' The breathing pattern is non-existent.",
+                flatness: true,
+                isAI: true
+            }
+        ];
+        
+        let quizIdx = 0;
+        let quizScore = 0;
+
+        function initQuiz() {
+            loadQuizScenario();
+        }
+
+        function loadQuizScenario() {
+            if(quizIdx >= quizData.length) {
+                document.getElementById('quiz-container').innerHTML = `
+                    <div class="text-center py-10">
+                        <i class="fas fa-award text-6xl text-yellow-400 mb-4 block"></i>
+                        <h3 class="text-2xl font-bold mb-2">Evaluation Complete</h3>
+                        <p class="text-white/60 mb-4">You scored ${quizScore} out of ${quizData.length}.</p>
+                        <button onclick="quizIdx=0; quizScore=0; switchTab('dashboard'); setTimeout(initQuiz, 500);" class="bg-white text-brand-blue font-bold px-6 py-2 rounded">Return to Core</button>
+                    </div>`;
+                return;
+            }
+
+            const q = quizData[quizIdx];
+            document.getElementById('quiz-current').innerText = quizIdx + 1;
+            document.getElementById('quiz-title').innerText = `Intercepted Comms 00${quizIdx+1}`;
+            document.getElementById('quiz-desc').innerText = `"${q.desc}"`;
+            
+            // Draw visual trace
+            const vis = document.getElementById('quiz-visual');
+            vis.innerHTML = '';
+            for(let i=0; i<20; i++) {
+                const bar = document.createElement('div');
+                const h = q.flatness ? (Math.random() * 10 + 40) : (Math.random() * 80 + 10);
+                bar.className = q.flatness ? 'w-2 bg-cyan-400 rounded-sm' : 'w-2 bg-green-400 rounded-sm';
+                bar.style.height = `${h}%`;
+                vis.appendChild(bar);
+            }
+
+            document.getElementById('quiz-feedback').classList.add('hidden');
+        }
+
+        function answerQuiz(answer) {
+            const q = quizData[quizIdx];
+            const correct = (answer === 'AI' && q.isAI) || (answer === 'HUMAN' && !q.isAI);
+            
+            const fb = document.getElementById('quiz-feedback');
+            fb.classList.remove('hidden');
+            
+            if(correct) {
+                quizScore++;
+                document.getElementById('quiz-score').innerText = quizScore;
+                fb.innerText = "CORRECT. Forensic signature matches your assessment.";
+                fb.className = "mt-6 text-center text-sm font-bold p-3 rounded bg-green-500/20 border border-green-500 text-green-400";
+            } else {
+                fb.innerText = `INCORRECT. The trace indicates ${q.isAI ? 'AI Generation' : 'Human Origin'}.`;
+                fb.className = "mt-6 text-center text-sm font-bold p-3 rounded bg-red-500/20 border border-red-500 text-red-400";
+            }
+
+            setTimeout(() => {
+                quizIdx++;
+                loadQuizScenario();
+            }, 2500);
+        }
+
+        // Run setup
+        window.onload = initApp;
+
+    </script>
+</body>
+</html>
